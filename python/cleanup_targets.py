@@ -450,6 +450,16 @@ def main():
         fieldnames = reader.fieldnames or []
         rows = list(reader)
 
+    # this list comes back from IT, possibly reshaped — so check the columns we
+    # actually need are here, and say so plainly if they aren't (rather than
+    # quietly classifying everything as out-of-scope)
+    needed = [EMAIL_COLUMN, STATUS_COLUMN, KEEP_COLUMN, DELETED_COLUMN, NOTICE_DATE_COLUMN]
+    missing = [c for c in needed if c not in fieldnames]
+    if missing:
+        print(f"  NOTE: the input is missing expected columns: {missing}")
+        print( "        it's the sheet IT handed back — reconcile the names in the")
+        print( "        CONFIG block above, or wrangle the sheet in R first.")
+
     # load the never-delete list, then sort every row into a bucket so we can
     # report why things dropped out
     load_keep_list()

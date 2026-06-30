@@ -5,6 +5,12 @@ graduated users whose content is past its retention window, back it up, check
 nothing depends on it, delete it, and log every step. This replaces the manual
 "find departed users, email them, delete by hand" cycle.
 
+The package produces a *candidate* priority list from our own criteria (storage,
+inactivity, protection); graduation itself is confirmed in collaboration with IT,
+who return the list with the `status` column adjusted. Expect to do a little R
+wrangling to reconcile that exchange — see "What a priority target is" in
+`docs/policy-and-decisions.md`.
+
 > ⚠️ **This repository holds code and documentation only — never data.**
 > The AGO exports, priority sheets, manifests, and backups contain student and
 > faculty emails, login history, and graduation status. They are education
@@ -86,11 +92,11 @@ integration test is the dry run against the org.
 
 ## Open items (read before a live run)
 
-- **Graduation status from IT.** "Departed" = graduated. IT takes the candidate
-  list and hands it back with the graduation `status` stamped on — it's a
-  round-trip column, not a separate source to join. `build_priority_list.R` still
-  fills `status` from an inactivity proxy; it should instead defer to the value IT
-  returns. See the banner in that file and `docs/policy-and-decisions.md`.
+- **IT graduation confirmation (a workflow step, not a bug).** The package builds
+  a *candidate* priority list from our criteria; IT confirms graduation on the
+  returned sheet, and `cleanup_targets.py` runs on that. Expect to do some R
+  wrangling to reconcile what IT returns. See "What a priority target is" in
+  `docs/policy-and-decisions.md`.
 - **Backup retention** is currently the 14-day recycle bin; the roadmap argues
   for offsite file-geodatabase backups (the script now produces these, but the
   retention *policy* is unsettled).

@@ -45,6 +45,26 @@ priority list with `keep = TRUE`.
 Private content is safe for automated deletion; **public content is never
 auto-deleted** and is held for review.
 
+**What a "priority target" is, and the IT hand-off.**
+A priority target is an account the program flags as a *candidate* for cleanup —
+not a confirmed deletion. `build_priority_list.R` builds the candidate list from
+our own criteria: a **storage footprint** at or above the threshold (the
+aggressive cut, >= 1 GB), **inactivity** of 1+ year, and **not protected** (not
+faculty/staff, not on the keep-list). Each candidate is ranked by a priority score
+— storage impact (35%), inactivity (30%), content staleness (20%), low usage
+(15%) — and the list carries diagnostic columns (storage, days since login,
+activity status, item count, score).
+
+The program operates off this list, but the list is a **proposal**. Graduation is
+IT's to confirm: we send the candidate list to IT, they adjust the `status` column
+(and may reshape the sheet), and the **returned sheet** is what `cleanup_targets.py`
+runs on. This is a deliberate collaboration, not an automated join. **Whoever holds
+this seat should expect to do some R data-wrangling** to reconcile what IT returns —
+column names, extra fields, format — back into the shape the deletion script reads.
+The scripts are built to be amenable to that exchange: the deletion script reads by
+column name, tolerates extra columns, and flags missing ones rather than silently
+dropping rows.
+
 ## Open
 
 **5. Backup retention.** The decision on record is the **14-day** native recycle
@@ -57,11 +77,6 @@ settled.
 office is needed before the **first live run** for any accounts holding
 grant-bound or records-retention-bound data. Do not delete faculty or public
 content without review.
-
-**Graduation source integration.** `build_priority_list.R` must join the IT
-graduation data. Still needed: the **join key** (email vs username) and whether
-the source carries a **graduation date** (required to apply the 1-year / 2-year
-retention clock).
 
 **Keep-list ownership.** Who maintains the never-delete list (faculty, sponsored,
 active research) after the current co-op leaves.

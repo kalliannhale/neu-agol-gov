@@ -22,15 +22,17 @@ library(tidyverse)
 library(lubridate)
 
 ## ###########################################################################
-## ~~ OPEN ITEM — don't run this live yet ~~
-##   "departed" means GRADUATED, and graduation is IT's data, not ours to guess.
-##     the eligibility block below still fakes it from an INACTIVITY PROXY, which
-##     is WRONG for this program. it needs to JOIN the IT graduation source
-##     (status + graduation date) and gate on:
-##       graduated AND past retention (1 yr private / 2 yr public) AND not faculty.
-##   storage size + the priority score only RANK the targets — they don't pick them.
-##   still need from IT: the join key (email vs username), and whether the source
-##     carries a graduation date. see docs/policy-and-decisions.md (open items).
+## ~~ how this works ~~ (the IT hand-off)
+##   this script PROPOSES priority targets from our own criteria: enough storage,
+##     long enough inactive, and not protected. it writes status = "DEPARTED" as a
+##     candidate flag — it is NOT a confirmed graduation.
+##   graduation is IT's to confirm. the hand-off: we send this candidate list to
+##     IT, they adjust the status column (and may reshape the sheet), and the
+##     RETURNED sheet is what cleanup_targets.py actually runs on. so be ready to
+##     do a little R wrangling to reconcile whatever comes back — column names,
+##     extra fields, and so on.
+##   storage + the priority score only RANK the targets; they don't decide
+##     deletion. see docs/policy-and-decisions.md for the full definition.
 ## ###########################################################################
 
 ## ---- config — edit, then run -----------------------------------------------
