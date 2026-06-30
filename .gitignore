@@ -1,0 +1,68 @@
+# =============================================================================
+#  DATA NEVER GOES IN THIS REPO.
+#  The AGO exports, priority sheets, manifests, and backups contain student and
+#  faculty emails, names, login history, and graduation status -- education
+#  records. They live in institutional storage, not here. The blanket rules
+#  below are deliberately aggressive; if you ever need a small synthetic fixture
+#  committed, force it with `git add -f` and be sure it contains no real data.
+# =============================================================================
+
+# ---- Raw ArcGIS Online exports ----
+*Organization*Items*.csv
+*Organization*Members*.csv
+*OrganizationItemUsages*.csv
+*OrganizationActivity*.csv
+*Activity*.csv
+members*.csv
+
+# ---- Working priority / tracking sheets ----
+cleanup_priority*.csv
+priority*.csv
+email_list*.csv
+*departed*.csv
+*graduat*.csv
+
+# ---- Run artifacts: manifests, results, review lists, write-backs ----
+cleanup_manifest*.csv
+cleanup_results*.csv
+cleanup_review*.csv
+*_updated.csv
+
+# ---- Blanket catch-alls (belt and suspenders) ----
+*.csv
+*.tsv
+*.xlsx
+*.xls
+*.gdb
+*.gdb.zip
+*.zip
+
+# ---- Working directories (keep the folder, drop the contents) ----
+data/**
+!data/README.md
+outputs/**
+!outputs/.gitkeep
+backups/**
+!backups/.gitkeep
+
+# ---- Credentials / local config with real values ----
+config.py
+config.local.*
+*.local.*
+.env
+*.token
+*.key
+*credentials*
+*secret*
+
+# ---- R / Python / editor cruft ----
+.Rhistory
+.RData
+.Rproj.user/
+*.Rproj
+__pycache__/
+*.pyc
+.venv/
+venv/
+.ipynb_checkpoints/
+.DS_Store

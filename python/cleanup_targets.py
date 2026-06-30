@@ -47,12 +47,14 @@ from arcgis.gis import GIS
 ORG_URL = "https://nu.maps.arcgis.com"   # our AGO org
 ADMIN_USERNAME = "RDS_NU"                 # or None to get prompted
 
-INPUT_CSV    = "cleanup_priority.csv"     # the reviewed priority list
-MANIFEST_CSV = "cleanup_manifest.csv"     # everything we looked at + what we decided
-RESULTS_LOG  = "cleanup_results.csv"      # how each item actually turned out
-REVIEW_CSV   = "cleanup_review_needed.csv"# the stuff we held back for a human
-UPDATED_CSV  = "cleanup_priority_updated.csv"  # input list + the deleted-flag write-back
-BACKUP_DIR   = "backups"                  # pre-delete exports land here
+# inputs live in data/ (you put them there); everything we generate goes to data/outputs/
+INPUT_CSV     = "data/cleanup_priority.csv"     # the reviewed list, back from IT
+KEEP_LIST_CSV = "data/keep_list.csv"            # never-delete names/emails (co-ops, etc.)
+MANIFEST_CSV = "data/outputs/cleanup_manifest.csv"          # everything we looked at + what we decided
+RESULTS_LOG  = "data/outputs/cleanup_results.csv"           # how each item actually turned out
+REVIEW_CSV   = "data/outputs/cleanup_review_needed.csv"     # the stuff we held back for a human
+UPDATED_CSV  = "data/outputs/cleanup_priority_updated.csv"  # input list + the deleted-flag write-back
+BACKUP_DIR   = "data/outputs/backups"           # pre-delete exports land here
 
 # ~~ the single most important switch in this file ~~
 # True  = look, but touch nothing. run this first and read the manifest.
@@ -91,6 +93,10 @@ STATUS_COLUMN = "status"
 KEEP_COLUMN   = "keep"
 DELETED_COLUMN = "deleted"
 NOTICE_DATE_COLUMN = "notice_date"   # when the owner was emailed (any normal date format)
+
+# the never-delete list (co-ops, protected staff), loaded from KEEP_LIST_CSV at run time
+KEEP_LIST_EMAILS = set()
+KEEP_LIST_NAMES = set()
 
 # hosted data has no file to hand us, so we have to EXPORT it to back it up.
 # everything else we just download as-is. add to this set if we pick up more
@@ -143,6 +149,7 @@ def classify_row(row: dict) -> str:
     keep    = (row.get(KEEP_COLUMN) or "").strip().upper()
     deleted = (row.get(DELETED_COLUMN) or "").strip().upper()
     email   = (row.get(EMAIL_COLUMN) or "").strip()
+    name    = (row.get(NAME_COLUMN) or "").strip().lower()
 
     # graduated is the only thing we ever act on
     if status != "DEPARTED":
@@ -153,6 +160,9 @@ def classify_row(row: dict) -> str:
     # already handled on an earlier run
     if deleted == "TRUE":
         return "already_deleted"
+    # on the never-delete list (co-ops, protected staff)
+    if email.lower() in KEEP_LIST_EMAILS or name in KEEP_LIST_NAMES:
+        return "keep_listed"
     # faculty/staff backstop, even if 'keep' never got set
     if GUARD_FACULTY and is_faculty_email(email):
         return "faculty_guard"
@@ -181,6 +191,24 @@ def now() -> str:
 def throttle():
     if THROTTLE_SECONDS:
         time.sleep(THROTTLE_SECONDS)
+
+
+def load_keep_list():
+    """pull the never-delete names/emails out of KEEP_LIST_CSV (co-ops, protected
+        staff). matches on email or name, whichever a row has. no file = empty list,
+        and we just lean on the faculty pattern + the keep column instead."""
+    if not os.path.exists(KEEP_LIST_CSV):
+        print(f"  (no keep-list at {KEEP_LIST_CSV} — relying on the keep column + faculty guard)")
+        return
+    with open(KEEP_LIST_CSV, newline="", encoding="utf-8-sig") as f:
+        for row in csv.DictReader(f):
+            e = (row.get("email") or "").strip().lower()
+            n = (row.get("name") or "").strip().lower()
+            if e:
+                KEEP_LIST_EMAILS.add(e)
+            if n:
+                KEEP_LIST_NAMES.add(n)
+    print(f"  keep-list: {len(KEEP_LIST_EMAILS)} emails, {len(KEEP_LIST_NAMES)} names protected")
 
 
 def connect() -> GIS:
@@ -422,15 +450,17 @@ def main():
         fieldnames = reader.fieldnames or []
         rows = list(reader)
 
-    # sort every row into a bucket, so we can report why things dropped out
+    # load the never-delete list, then sort every row into a bucket so we can
+    # report why things dropped out
+    load_keep_list()
     buckets = defaultdict(list)
     for r in rows:
         buckets[classify_row(r)].append(r)
     targets = buckets["in_scope"]
 
     print(f"\n{len(rows)} rows in file.")
-    for reason in ("in_scope", "not_departed", "keep_flagged", "already_deleted",
-                   "faculty_guard", "notice_pending"):
+    for reason in ("in_scope", "not_departed", "keep_flagged", "keep_listed",
+                   "already_deleted", "faculty_guard", "notice_pending"):
         if buckets[reason]:
             print(f"  {reason:<16}: {len(buckets[reason])}")
     if not targets:

@@ -34,9 +34,11 @@ library(lubridate)
 ## ###########################################################################
 
 ## ---- config — edit, then run -----------------------------------------------
-ITEM_REPORT   <- "OrganizationItems.csv"     # item activity report (this one's got the storage)
-MEMBER_REPORT <- "OrganizationMembers.csv"   # member report (Last Login Date, Role, etc.)
-OUTPUT_CSV    <- "cleanup_priority.csv"       # what we hand off to cleanup_targets.py
+# inputs live in data/; everything we write goes to data/outputs/
+ITEM_REPORT   <- "data/OrganizationItems.csv"        # item activity report (this one's got the storage)
+MEMBER_REPORT <- "data/OrganizationMembers.csv"      # member report (Last Login Date, Role, etc.)
+OUTPUT_CSV    <- "data/outputs/cleanup_priority.csv" # candidate list — goes to IT, then to cleanup_targets.py
+KEEP_LIST_CSV <- "data/keep_list.csv"                # never-target names/emails (co-ops, etc.)
 
 ## the File/Feature Storage Size columns don't say what unit they're in, and AGO
 ##     is genuinely inconsistent about it. SET THIS, run, and check the org total
@@ -59,6 +61,15 @@ FACULTY_EMAIL_REGEX    <- "^[a-z]\\.[a-z'-]+@"  # backstop: first-initial.lastna
 
 ## owner names sometimes drag a department suffix along; strip it before we match
 OWNER_SUFFIX_REGEX <- "(_NU|_PPUA|_CSSH|_COE|_CAMD|_COS|_DMSB|_BCHS|_LAW|_Bouve)$"
+
+## pull the never-target list (co-ops, protected staff) if it's there; match on
+## email or name. no file just means we lean on the faculty signals alone.
+keep_emails <- character(0); keep_names <- character(0)
+if (file.exists(KEEP_LIST_CSV)) {
+  kl <- suppressWarnings(read_csv(KEEP_LIST_CSV, show_col_types = FALSE))
+  if ("email" %in% names(kl)) keep_emails <- tolower(str_trim(kl$email))
+  if ("name"  %in% names(kl)) keep_names  <- tolower(str_trim(kl$name))
+}
 
 ## ---- helpers ---------------------------------------------------------------
 
@@ -198,10 +209,13 @@ joined <- by_owner %>%
     # weighted blend -> 0..100
     priority_score = round(100 * (0.35 * s_storage + 0.30 * s_inactive +
                                   0.20 * s_stale + 0.15 * s_lowusage), 1),
-    # the aggressive cut: big enough, gone long enough, and not faculty
+    # never-target list (co-ops, protected staff) — match on email or name
+    on_keep_list = (email %in% keep_emails) | (tolower(name) %in% keep_names),
+    protected    = coalesce(is_faculty, FALSE) | coalesce(on_keep_list, FALSE),
+    # the aggressive cut: big enough, gone long enough, and not protected
     eligible = storage_gb >= MIN_STORAGE_GB &
                !is.na(days_since_login) & days_since_login > INACTIVE_DAYS &
-               !coalesce(is_faculty, FALSE)
+               !protected
   )
 
 ## ---- 5. write it out (columns line up with cleanup_targets.py) -------------
@@ -210,7 +224,7 @@ out <- joined %>%
     final_email = email,
     final_name  = name,
     status      = if_else(eligible, "DEPARTED", ""),   # a PROXY for now — see the banner up top
-    keep        = if_else(coalesce(is_faculty, FALSE), "TRUE", ""),  # belt-and-suspenders keep for faculty
+    keep        = if_else(protected, "TRUE", ""),  # belt-and-suspenders keep for faculty + keep-list
     deleted     = "",
     notice_date = "",                                   # gets filled in when we email them
     departed_basis   = if_else(eligible, "inactivity_proxy", ""),
@@ -221,6 +235,7 @@ out <- joined %>%
   ) %>%
   arrange(desc(status == "DEPARTED"), desc(priority_score))
 
+dir.create(dirname(OUTPUT_CSV), recursive = TRUE, showWarnings = FALSE)
 write_csv(out, OUTPUT_CSV)
 
 ## ---- 6. the summary — does this match the report? --------------------------
@@ -234,8 +249,8 @@ cat(sprintf("[targets] N/A last-login (surfaced, NOT auto-targeted): %d users\n"
             sum(joined$activity_status == "N/A")))
 cat(sprintf("[targets] Owners with no member match (treated as N/A): %d\n",
             sum(is.na(joined$username))))
-cat(sprintf("[targets] Faculty/staff held out: %d\n",
-            sum(coalesce(joined$is_faculty, FALSE))))
+cat(sprintf("[targets] Protected & held out (faculty + keep-list): %d\n",
+            sum(coalesce(joined$protected, FALSE))))
 cat(sprintf("[targets] Eligible users still owning public items (script skips those): %d\n",
             sum(elig$public_items > 0)))
 cat(sprintf("\nWrote %s (%d rows).\n", OUTPUT_CSV, nrow(out)))

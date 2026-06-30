@@ -1,89 +1,109 @@
-# neu-agol-gov
+# ArcGIS Online Governance — Research & Data Services
 
-# Runbook — Annual Cleanup Run (June)
+Scheduled, auditable cleanup of the Northeastern AGO organization: identify
+graduated users whose content is past its retention window, back it up, check
+nothing depends on it, delete it, and log every step. This replaces the manual
+"find departed users, email them, delete by hand" cycle.
 
-Step-by-step for one full cycle. Assumes the setup in the main README is done
-and the open items in `policy-and-decisions.md` are resolved (in particular, the
-IT graduation source is joined into `build_priority_list.R` before any live run).
+> ⚠️ **This repository holds code and documentation only — never data.**
+> The AGO exports, priority sheets, manifests, and backups contain student and
+> faculty emails, login history, and graduation status. They are education
+> records and live in institutional storage, not here. See `data/README.md`.
+> The `.gitignore` blocks every data pattern, but the rule comes first.
 
-Run everything from the repository root unless noted. Data files go in `data/`;
-script outputs land in `outputs/`.
+---
 
-## 1. Download the reports
-
-From AGO (Organization → Reports), export into `data/`:
-- the **item report** (item activity — has Owner, storage sizes, share level,
-  view counts, date last viewed, recycle-bin flag),
-- the **member report** (has Username, Email, Role, User Type, Member Categories,
-  Last Login Date, account status).
-
-Obtain the current **graduation data from IT** and place it where
-`build_priority_list.R` expects it.
-
-## 2. Identify targets
+## What's here
 
 ```
-Rscript scripts/build_priority_list.R
+agol-governance/
+├── README.md                      # you are here
+├── .gitignore                     # blocks all data + credential patterns
+├── scripts/
+│   ├── build_priority_list.R      # IDENTIFY: builds the priority target list
+│   └── cleanup_targets.py         # OFFBOARD: backs up, checks deps, deletes, logs
+├── tests/
+│   └── test_cleanup_targets.py    # offline gate-logic tests (no live org needed)
+├── docs/
+│   ├── policy-and-decisions.md    # the governance rules + open decisions
+│   ├── runbook-annual-cleanup.md  # step-by-step for the June run
+│   ├── 01_annual_cleanup_runbook.pdf      # how-to guides (committed; no data)
+│   ├── 02_identification_and_setup.pdf
+│   ├── 03_offboarding_safety_guide.pdf
+│   └── README.md                  # doc index + where the big reference PDFs live
+├── keep_list.example.csv          # template for the never-delete list (committed)
+└── data/            (git-ignored) # everything read or generated lives here:
+    ├── README.md                  #   (the one tracked file under data/)
+    ├── keep_list.csv              #   the live never-delete list (co-ops, staff)
+    └── outputs/                   #   manifests, results, priority list, + backups/
 ```
 
-Read the printed checks before trusting the output:
-- **Units** — the org total should be near 1,151 GB. If it is off by orders of
-  magnitude, fix `STORAGE_COL_UNIT` and re-run.
-- **Faculty values** — the distinct Role / User Type / Member Categories lists
-  tell you what to put in `FACULTY_ROLES` / `FACULTY_USER_TYPES`. Fill them and
-  re-run so faculty are correctly held out.
-- **Recovery** — the recoverable total is a sanity check against the report's
-  scenario.
+## The annual sequence (June)
 
-Output: `outputs/cleanup_priority.csv`.
+Full steps are in `docs/runbook-annual-cleanup.md`; the shape is:
 
-## 3. Notify owners
+1. **Download** the AGO item report and member report into `data/`.
+2. **Identify** — run `scripts/build_priority_list.R` → `data/outputs/cleanup_priority.csv`.
+   Read the three self-checks it prints (storage units, recoverable total,
+   faculty values).
+3. **IT round-trip** — send that candidate list to IT; they stamp graduation
+   status onto it and hand it back. Place the returned sheet at
+   `data/cleanup_priority.csv` (the deletion script's input).
+4. **Notify** the owners; record the date in the `notice_date` column. The
+   15-day grace clock starts here.
+5. **Dry run** — run `scripts/cleanup_targets.py` with `DRY_RUN = True`. Read
+   `data/outputs/cleanup_manifest.csv` and `data/outputs/cleanup_review_needed.csv`.
+6. **Review** — a second person signs off on the manifest. Public items and
+   anything with a dependent are held in the review file, by design.
+7. **Live run** — set `DRY_RUN = False`. Each item is backed up to
+   `data/outputs/backups/`, dependency-checked, then deleted to the recycle bin.
+8. **Close out** — `data/outputs/cleanup_priority_updated.csv` carries the
+   write-back; archive the manifest and results to the audit trail.
 
-Email the flagged owners. Record the send date in each row's `notice_date`
-column. This starts the 15-day grace clock; the deletion script will not act on
-a row until the grace window has elapsed.
+## Setup
 
-## 4. Dry run
+- **R** with `tidyverse` and `lubridate` (for `build_priority_list.R`).
+- **Python 3** with `arcgis` (`pip install arcgis`) for `cleanup_targets.py`.
+- Edit the `CONFIG` block at the top of each script (org URL, admin username,
+  thresholds, file paths). These are settings, not secrets.
+- **The admin password is never stored.** `cleanup_targets.py` prompts for it at
+  runtime via `getpass`. Do not add it to any file.
+- Run as an org administrator (deleting other users' content requires it).
+- **Keep-list.** Maintain `data/keep_list.csv` (columns: `email,name,reason`) with
+  the never-delete accounts — co-ops, sponsored, active research. Both scripts read
+  it and protect anyone on it. `keep_list.example.csv` shows the format; the live
+  list stays in `data/` and should be kept in institutional storage between co-ops.
 
-In `scripts/cleanup_targets.py`, confirm `DRY_RUN = True`, then:
-
-```
-python3 scripts/cleanup_targets.py
-```
-
-Read:
-- `cleanup_manifest.csv` — everything considered, with its disposition.
-- `cleanup_review_needed.csv` — public items and items with a dependent, held
-  back on purpose. These are handled by hand, not by the batch.
-
-## 5. Review and authorize
-
-A second person reviews the manifest and the review file and signs off. Spot-check
-that nothing belonging to an active or faculty user is in the delete set.
-
-## 6. Live run
-
-Set `DRY_RUN = False` (leave `PERMANENT_DELETE = False`). For an unattended
-Notebook run, also set `REQUIRE_CONFIRMATION = False`; for an interactive run,
-leave it on and type the confirmation when prompted.
+## Testing
 
 ```
-python3 scripts/cleanup_targets.py
+cd tests && python3 test_cleanup_targets.py
 ```
 
-Each in-scope item is exported to `backups/`, dependency-checked, then deleted to
-the 14-day recycle bin. Items whose backup fails are skipped, not deleted.
+This stubs the `arcgis` library and verifies the safety gates offline — public
+items, dependency holds, and backup failures all prevent deletion. The true
+integration test is the dry run against the org.
 
-## 7. Close out
+## Open items (read before a live run)
 
-- `outputs/cleanup_priority_updated.csv` has `deleted = TRUE` written back for
-  fully-cleaned owners — promote it to the tracking sheet for next year.
-- Archive `cleanup_manifest.csv` and `cleanup_results.csv` to the audit trail.
-- Move `backups/` to institutional storage; keep per the retention policy.
+- **Graduation status from IT.** "Departed" = graduated. IT takes the candidate
+  list and hands it back with the graduation `status` stamped on — it's a
+  round-trip column, not a separate source to join. `build_priority_list.R` still
+  fills `status` from an inactivity proxy; it should instead defer to the value IT
+  returns. See the banner in that file and `docs/policy-and-decisions.md`.
+- **Backup retention** is currently the 14-day recycle bin; the roadmap argues
+  for offsite file-geodatabase backups (the script now produces these, but the
+  retention *policy* is unsettled).
+- **Records/legal check** before the first live run, for any grant- or
+  retention-bound data.
+- **Keep-list maintenance** — `data/keep_list.csv` exists, but it's git-ignored,
+  so someone owns keeping it current and carrying it between co-ops (likely
+  institutional storage). Confirm emails/roles for the seeded co-op rows.
+- **Storage units** must be confirmed on first run (see the script's check).
 
-## If something goes wrong
+## Ownership
 
-- A deletion that should not have happened: supported types sit in the recycle
-  bin for 14 days; restore from there, or from the `backups/` export.
-- A broken downstream map after a run: check `cleanup_results.csv` and the
-  review file for the item, and restore from `backups/`.
+This repository lives in the **library / RDS institutional account**, with
+Bahare Sanaie-Movahed as an owner, so access carries from one co-op to the next.
+Do not host the working copy on a personal account — that is exactly the failure
+this repo exists to prevent.
